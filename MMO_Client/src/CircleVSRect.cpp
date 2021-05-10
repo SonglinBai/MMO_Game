@@ -1,3 +1,4 @@
+#define OLC_IMAGE_STB
 #define OLC_PGE_APPLICATION
 #include "olcPixelGameEngine.h"
 
@@ -21,49 +22,32 @@ private:
 
     // Use string to set the world map
     // '#' means block, '.' means space player can move
-    std::string sWorldMap =
-            "################################"
-            "#..............................#"
-            "#.......#####.#.....#####......#"
-            "#.......#...#.#.....#..........#"
-            "#.......#...#.#.....#..........#"
-            "#.......#####.#####.#####......#"
-            "#..............................#"
-            "#.....#####.#####.#####..##....#"
-            "#.........#.#...#.....#.#.#....#"
-            "#.....#####.#...#.#####...#....#"
-            "#.....#.....#...#.#.......#....#"
-            "#.....#####.#####.#####.#####..#"
-            "#..............................#"
-            "#..............................#"
-            "#..#.#..........#....#.........#"
-            "#..#.#..........#....#.........#"
-            "#..#.#.......#####.#######.....#"
-            "#..#.#..........#....#.........#"
-            "#..#.#.............###.#.#.....#"
-            "#..#.##########................#"
-            "#..#..........#....#.#.#.#.....#"
-            "#..#.####.###.#................#"
-            "#..#.#......#.#................#"
-            "#..#.#.####.#.#....###..###....#"
-            "#..#.#......#.#....#......#....#"
-            "#..#.########.#....#......#....#"
-            "#..#..........#....#......#....#"
-            "#..############....#......#....#"
-            "#..................########....#"
-            "#..............................#"
-            "#..............................#"
-            "################################";
-
-    olc::vi2d vWorldSize = {32, 32};
+    std::string sWorldMap;
+    olc::vi2d vWorldSize = {0, 0};
 
     // Flag means follow player or not
     bool bFollowObject = false;
+
+private:
+    void setMap(std::string path) {
+        std::ifstream file(path);
+
+        std::string line;
+        while (std::getline(file, line)) {
+            sWorldMap.append(line);
+            vWorldSize.y++;
+        }
+        vWorldSize.x = line.length();
+
+        std::cout << "Map " << path << " loaded\nSize: (" << vWorldSize.x << "," << vWorldSize.y << ")\n";
+    }
+
 
 public:
     bool OnUserCreate() override {
         // Create "Tiled World", each tile is 32 * 32 screen pixels
         // The coordinates for drawing is set to the tile now
+        setMap("resources/map/map_demo.txt");
         tv = olc::TileTransformedView({ScreenWidth(), ScreenHeight()}, {32, 32});
         object.vPos = {3.0f, 3.0f};
         return true;

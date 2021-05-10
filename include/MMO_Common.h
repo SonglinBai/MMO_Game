@@ -2,12 +2,13 @@
 #include <cstdint>
 
 #include "bsl_net.h"
+#include "olcPixelGameEngine.h"
 
 enum class GameMsg : uint32_t {
     Server_GetStatus,
     Server_GetPing,
 
-    Client_accepted,
+    Client_Accept,
     Client_AssignID,
     Client_RegisterWithServer,
     Client_UnregisterWithServer,

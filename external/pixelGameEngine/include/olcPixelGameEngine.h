@@ -193,7 +193,7 @@
 
 	Author
 	~~~~~~
-	David Barr, aka javidx9, ©OneLoneCoder 2018, 2019, 2020, 2021
+	David Barr, aka javidx9, ï¿½OneLoneCoder 2018, 2019, 2020, 2021
 */
 #pragma endregion
 
@@ -510,7 +510,9 @@ namespace olc
 		enum Mode { NORMAL, MASK, ALPHA, CUSTOM };
 
 		Pixel();
-		Pixel(uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha = nDefaultAlpha);
+        // Need to pre implement, because useful constants used this method
+        Pixel(uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha = nDefaultAlpha)
+        { n = red | (green << 8) | (blue << 16) | (alpha << 24); }
 		Pixel(uint32_t p);
 		Pixel& operator = (const Pixel& v) = default;
 		bool   operator ==(const Pixel& p) const;
@@ -1155,9 +1157,6 @@ namespace olc
 	// O------------------------------------------------------------------------------O
 	Pixel::Pixel()
 	{ r = 0; g = 0; b = 0; a = nDefaultAlpha; }
-
-	Pixel::Pixel(uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha)
-	{ n = red | (green << 8) | (blue << 16) | (alpha << 24); } // Thanks jarekpelczar 
 
 	Pixel::Pixel(uint32_t p)
 	{ n = p; }
