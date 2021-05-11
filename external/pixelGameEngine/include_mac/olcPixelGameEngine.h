@@ -511,7 +511,9 @@ namespace olc
 
         enum Mode { NORMAL, MASK, ALPHA, CUSTOM };
 
-        Pixel();
+        // Need to pre implement
+        Pixel()
+        { r = 0; g = 0; b = 0; a = nDefaultAlpha; }
         // Need to pre implement, because useful constants used this method
         Pixel(uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha = nDefaultAlpha)
         { n = red | (green << 8) | (blue << 16) | (alpha << 24); }
@@ -1157,9 +1159,6 @@ namespace olc
     // O------------------------------------------------------------------------------O
     // | olc::Pixel IMPLEMENTATION                                                    |
     // O------------------------------------------------------------------------------O
-    Pixel::Pixel()
-    { r = 0; g = 0; b = 0; a = nDefaultAlpha; }
-
     Pixel::Pixel(uint32_t p)
     { n = p; }
 

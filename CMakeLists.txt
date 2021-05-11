@@ -10,6 +10,7 @@ set(INCLUDES
         ${PROJECT_SOURCE_DIR}/external/network/include
         ${PROJECT_SOURCE_DIR}/external/pixelGameEngine/extension
         ${PROJECT_SOURCE_DIR}/external/stb_image/include
+        ${PROJECT_SOURCE_DIR}/external/magic_enum/include
         )
 
 if (WIN32)

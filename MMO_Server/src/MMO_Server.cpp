@@ -11,6 +11,11 @@ public:
     // Player need to be deleted
     std::vector<uint32_t> m_vGarbageIDs;
 
+private:
+    ServerStatus getServerStatus() {
+        return ServerStatus::IDLE;
+    }
+
 protected:
     bool OnClientConnect(std::shared_ptr<bsl::net::connection<GameMsg>> client) override {
         // Just allow all
@@ -54,6 +59,21 @@ protected:
 
         // Now we can handle different message
         switch (msg.header.id) {
+            // When Client send ping message, just bounce back the message
+            case GameMsg::Server_GetPing: {
+                MessageClient(client, msg);
+                break;
+            }
+
+            // When Client send get status message, return the status of the message
+            case GameMsg::Server_GetStatus: {
+                bsl::net::message<GameMsg> msgStatus;
+                msgStatus.header.id = GameMsg::Server_GetStatus;
+                msgStatus << getServerStatus();
+                MessageClient(client, msgStatus);
+                break;
+            }
+
             // When Client want to register to the server
             case GameMsg::Client_RegisterWithServer: {
                 sPlayerDescription desc;
