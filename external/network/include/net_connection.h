@@ -129,7 +129,7 @@ namespace bsl {
                                               }
                                           }
                                       } else {
-                                          std::cout << "[" << id << "] Write Header Fail.\n";
+                                          std::cout << "[" << id << "] Write Header Fail.\n" << ec.message() << std::endl;
                                           m_socket.close();
                                       }
                                   });
@@ -150,7 +150,7 @@ namespace bsl {
                                               WriteHeader();
                                           }
                                       } else {
-                                          std::cout << "[" << id << "] Write Body Fail.\n";
+                                          std::cout << "[" << id << "] Write Body Fail.\n" << ec.message() << std::endl;
                                           m_socket.close();
                                       }
                                   });
@@ -172,7 +172,7 @@ namespace bsl {
                                              AddToIncomingMessageQueue();
                                          }
                                      } else {
-                                         std::cout << "[" << id << "] Read Header Fail.\n";
+                                         std::cout << "[" << id << "] Read Header Fail.\n" << ec.message() << std::endl;
                                          m_socket.close();
                                      }
                                  });
@@ -187,7 +187,7 @@ namespace bsl {
                                          // The message is complete now, just add it to the incoming message queue
                                          AddToIncomingMessageQueue();
                                      } else {
-                                         std::cout << "[" << id << "] Read Body Fail.\n";
+                                         std::cout << "[" << id << "] Read Body Fail.\n" << ec.message() << std::endl;
                                          m_socket.close();
                                      }
                                  });
@@ -253,7 +253,7 @@ namespace bsl {
                                              WriteValidation();
                                          }
                                      } else {
-                                         std::cout << "Client Desconnected (ReadValidation)\n";
+                                         std::cout << "Client Disconnected (ReadValidation)\n" << ec.message() << std::endl;
                                      }
                                  }
                 );

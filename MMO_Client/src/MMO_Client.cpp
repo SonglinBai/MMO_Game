@@ -123,7 +123,7 @@ public:
         tv = olc::TileTransformedView({ScreenWidth(), ScreenHeight()}, {32, 32});
         setMap("resources/map/map_demo.txt");
         // Connect to the server
-        if (Connect("localhost", 2696)) {
+        if (Connect("127.0.0.1", 2696)) {
             return true;
         }
         return false;

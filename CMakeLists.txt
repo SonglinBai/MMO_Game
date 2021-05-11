@@ -14,7 +14,7 @@ set(INCLUDES
         )
 
 if (WIN32)
-    include_directories(${INCLUDES})
+    include_directories(${INCLUDES} ${PROJECT_SOURCE_DIR}/external/pixelGameEngine/include)
 endif ()
 
 if (APPLE)
