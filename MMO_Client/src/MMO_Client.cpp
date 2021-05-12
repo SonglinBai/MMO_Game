@@ -58,6 +58,9 @@ private:
     // Time for ROF(rate of fire)
     float fROFTime = 0.0f;
 
+    // Time for increase energy
+    float fEnergyTime = 0.0f;
+
 private:
     void setMap(std::string path) {
         std::ifstream file(path);
@@ -87,36 +90,42 @@ private:
         Send(msg);
     }
 
-    inline void Shoot(ShootDirection direction) {
-        if (fROFTime<1.0f/mapObjects[nPlayerID].nRof) return;
+    inline void Shoot(olc::vf2d direction) {
+        if (fROFTime < 1.0f / mapObjects[nPlayerID].nRof) return;
         fROFTime = 0;
-        olc::vf2d v = mapObjects[nPlayerID].vVel;
-        switch (direction) {
-            case ShootDirection::UP: {
-                v += {0.0f, -1.0f * 2.0f};
-                break;
-            }
-            case ShootDirection::DOWN: {
-                v += {0.0f, 1.0f * 2.0f};
-                break;
-            }
-            case ShootDirection::LEFT: {
-                v += {-1.0f * 2.0f, 0.0f};
-                break;
-            }
-            case ShootDirection::RIGHT: {
-                v += {1.0f * 2.0f, 0.0f};
-                break;
-            }
-        }
+        olc::vf2d v;
+        if (mapObjects[nPlayerID].vVel.mag2() > 0) {
+            v = mapObjects[nPlayerID].vVel.norm();
+            if (direction.norm() == -v) v = direction;
+            else v += direction;
+        } else v = direction;
+
         // Declare a bullet
-        sBullet bullet = {nPlayerID, 1, 2, 0.1f,
+        sBullet bullet = {nPlayerID, 5, 2, 0, 0.2f,
                           olc::Pixel(255, 0, 0),
                           mapObjects[nPlayerID].vPos,
-                          v};
+                          v.norm() * 20.0f};
         listBullets.push_back(bullet);
+        // Send bullet fire message
+        bsl::net::message<GameMsg> FireMsg;
+        FireMsg.header.id = GameMsg::Game_FireBullet;
+        FireMsg << bullet;
+        Send(FireMsg);
     }
 
+    inline olc::vf2d reflect(olc::vf2d d, olc::vf2d n) {
+        olc::vf2d r;
+        r = d.norm() - 2 * (d.norm().dot(n.norm())) * n.norm();
+        r *= d.mag();
+        return r;
+    }
+
+    inline void HitPlayer(uint32_t shooterID, uint32_t suffererID, uint32_t damage) {
+        bsl::net::message<GameMsg> HitMsg;
+        HitMsg.header.id = GameMsg::Game_HitPlayer;
+        HitMsg << shooterID << suffererID << damage;
+        Send(HitMsg);
+    }
 
 public:
     bool OnUserCreate() override {
@@ -140,6 +149,7 @@ public:
             GetStatus();
         }
         fROFTime += fElapsedTime;
+        fEnergyTime += fElapsedTime;
 
         // Check for incoming network messages
         if (IsConnected()) {
@@ -206,6 +216,27 @@ public:
                         mapObjects.insert_or_assign(desc.nUniqueID, desc);
                         break;
                     }
+
+                    case (GameMsg::Game_FireBullet): {
+                        sBullet bullet;
+                        msg >> bullet;
+                        listBullets.push_back(bullet);
+                        break;
+                    }
+
+                    case (GameMsg::Game_HitPlayer): {
+                        uint32_t damage;
+                        uint32_t sufferer;
+                        uint32_t shooter;
+                        msg >> damage >> sufferer >> shooter;
+//                        std::cout << "Hit: " << damage <<", " << sufferer << ", " << damage << std::endl;
+                        if (sufferer == nPlayerID) {
+                            if (damage>mapObjects[nPlayerID].nHealth)
+                                mapObjects[nPlayerID].nHealth = 0;
+                            else mapObjects[nPlayerID].nHealth -= damage;
+                        }
+                        break;
+                    }
                 }
             }
         }
@@ -216,21 +247,50 @@ public:
             return true;
         }
 
-        // Control of Player Object, initialize playesr to left conor of the world
-        mapObjects[nPlayerID].vVel = {0.0f, 0.0f};
-        if (GetKey(olc::Key::W).bHeld) mapObjects[nPlayerID].vVel += {0.0f, -1.0f};
-        if (GetKey(olc::Key::S).bHeld) mapObjects[nPlayerID].vVel += {0.0f, +1.0f};
-        if (GetKey(olc::Key::A).bHeld) mapObjects[nPlayerID].vVel += {-1.0f, 0.0f};
-        if (GetKey(olc::Key::D).bHeld) mapObjects[nPlayerID].vVel += {+1.0f, 0.0f};
+        if (GetKey(olc::Key::Q).bHeld && mapObjects[nPlayerID].nEnergy > 0 && mapObjects[nPlayerID].vVel.mag2() > 0) {
+            mapObjects[nPlayerID].fSpeed = 15.0f;
+            if (fEnergyTime > 0.1f) {
+                mapObjects[nPlayerID].nEnergy--;
+                fEnergyTime = 0;
+            }
+            if (mapObjects[nPlayerID].nEnergy < 0) mapObjects[nPlayerID].nEnergy = 0;
+        } else {
+            mapObjects[nPlayerID].fSpeed = 8.0f;
+            if (fEnergyTime > 0.3f) {
+                mapObjects[nPlayerID].nEnergy++;
+                fEnergyTime = 0;
+            }
+            if (mapObjects[nPlayerID].nEnergy > mapObjects[nPlayerID].nMaxEnergy)
+                mapObjects[nPlayerID].nEnergy = mapObjects[nPlayerID].nMaxEnergy;
+        }
 
+        // Get Control Acc
+        olc::vf2d vControlAcc = {0.0f, 0.0f};
+        olc::vf2d vEnvAcc = {0.0f, 0.0f};
+        if (GetKey(olc::Key::W).bHeld) vControlAcc += {0.0f, -1.0f};
+        if (GetKey(olc::Key::S).bHeld) vControlAcc += {0.0f, +1.0f};
+        if (GetKey(olc::Key::A).bHeld) vControlAcc += {-1.0f, 0.0f};
+        if (GetKey(olc::Key::D).bHeld) vControlAcc += {+1.0f, 0.0f};
+        if (vControlAcc.mag2() > 0)
+            vControlAcc = vControlAcc.norm() * 80.0f;
         if (mapObjects[nPlayerID].vVel.mag2() > 0)
-            mapObjects[nPlayerID].vVel = mapObjects[nPlayerID].vVel.norm() * 6.0f;
+            vEnvAcc = -mapObjects[nPlayerID].vVel.norm() * 50.0f;
+
+        mapObjects[nPlayerID].vAcc = vEnvAcc + vControlAcc;
+
+        olc::vf2d before = mapObjects[nPlayerID].vVel.norm();
+        if (mapObjects[nPlayerID].vAcc.mag2() > 0)
+            mapObjects[nPlayerID].vVel += mapObjects[nPlayerID].vAcc * fElapsedTime;
+        if (mapObjects[nPlayerID].vVel.norm().dot(before) < 0)
+            mapObjects[nPlayerID].vVel = {0.0f, 0.0f};
+        if (mapObjects[nPlayerID].vVel.mag() > mapObjects[nPlayerID].fSpeed)
+            mapObjects[nPlayerID].vVel = mapObjects[nPlayerID].fSpeed * mapObjects[nPlayerID].vVel.norm();
 
         // Use arrow key to control player to shoot
-        if (GetKey(olc::Key::UP).bHeld) Shoot(ShootDirection::UP);
-        if (GetKey(olc::Key::DOWN).bHeld) Shoot(ShootDirection::DOWN);
-        if (GetKey(olc::Key::LEFT).bHeld) Shoot(ShootDirection::LEFT);
-        if (GetKey(olc::Key::RIGHT).bHeld) Shoot(ShootDirection::RIGHT);
+        if (GetKey(olc::Key::UP).bHeld) Shoot({0.0f, -1.0f});
+        if (GetKey(olc::Key::DOWN).bHeld) Shoot({0.0f, 1.0f});
+        if (GetKey(olc::Key::LEFT).bHeld) Shoot({-1.0f, 0.0f});
+        if (GetKey(olc::Key::RIGHT).bHeld) Shoot({1.0f, 0.0f});
 
 
         // Press Space key to toggle Follow mode
@@ -277,6 +337,29 @@ public:
                 }
             }
 
+            // Check collision with other object
+            for (auto &targetObject : mapObjects) {
+                // Ignore your self
+                if (object.first == targetObject.first) continue;
+
+                float fDistance = (object.second.vPos - targetObject.second.vPos).mag();
+                // Collision happened
+                if (fDistance <= object.second.fRadius + targetObject.second.fRadius) {
+                    // Move position
+                    float fOverlap = 0.5f * (fDistance - object.second.fRadius - object.second.fRadius);
+                    object.second.vPos -= fOverlap / fDistance * (object.second.vPos - targetObject.second.vPos);
+                    targetObject.second.vPos += fOverlap / fDistance * (object.second.vPos - targetObject.second.vPos);
+                    // Caculate velocity
+//                    olc::vf2d n = (targetObject.second.vPos - object.second.vPos).norm();
+//                    olc::vf2d k = object.second.vVel - targetObject.second.vVel;
+//                    float p = 20.0f * (n.x * k.x + n.y * k.y) / (object.second.nMass + targetObject.second.nMass);
+//                    object.second.vAcc = object.second.vAcc- p * targetObject.second.nMass * olc::vf2d(n.x, n.y);
+//                    targetObject.second.vAcc =
+//                            targetObject.second.vAcc+ p * object.second.nMass * olc::vf2d(n.x, n.y);
+                }
+
+            }
+
             // Set the object new position
             object.second.vPos = vPotentialPosition;
         }
@@ -311,11 +394,24 @@ public:
                         if (std::isnan(fOverlap)) fOverlap = 0;
 
                         if (fOverlap > 0) {
+//                            vPotentialPosition = vPotentialPosition - vRayToNearest.norm() * fOverlap;
                             // If happen collision, nBounce minus 1, and reverse the velocity
                             bullet.nBounce--;
-                            bullet.vVel *= -vRayToNearest.norm();
+                            bullet.vVel = reflect(bullet.vVel, -vRayToNearest);
                         }
                     }
+                }
+            }
+
+            for (auto &targetObject : mapObjects) {
+                // Ignore your self
+                if (bullet.nOwnerID == targetObject.first) continue;
+
+                float fDistance = (bullet.vPos - targetObject.second.vPos).mag();
+                // Collision happened
+                if (fDistance <= bullet.fRadius + targetObject.second.fRadius) {
+                    HitPlayer(bullet.nOwnerID, targetObject.first, bullet.nDamage);
+                    bullet.nBounce = -1;
                 }
             }
 
@@ -375,15 +471,40 @@ public:
                             olc::MAGENTA);
 
             // Draw Name
-            olc::vi2d vNameSize = GetTextSizeProp("ID: " + std::to_string(object.first));
+            std::string sName = "ID:" + std::to_string(object.first);
             tv.DrawStringPropDecal(
-                    object.second.vPos - olc::vf2d{vNameSize.x * 0.5f * 0.25f * 0.125f, -object.second.fRadius * 1.25f},
-                    "ID: " + std::to_string(object.first), olc::BLUE, {1, 1});
+                    object.second.vPos -
+                    olc::vf2d{GetTextSizeProp(sName).x * 0.5f * 0.25f * 0.125f, +object.second.fRadius * 1.75f},
+                    sName, olc::BLUE, {1, 1});
+            // Draw health and energy
+            std::string sHealth = "HP:" + std::to_string(object.second.nHealth);
+            tv.DrawStringPropDecal(
+                    object.second.vPos -
+                    olc::vf2d{GetTextSizeProp(sHealth).x * 0.5f * 0.25f * 0.125f, -object.second.fRadius * 1.25f},
+                    sHealth, olc::RED, {1, 1});
         }
         // Draw Bullet
         for (auto &bullet : listBullets) {
             tv.FillCircle(bullet.vPos, bullet.fRadius, bullet.pColor);
         }
+
+        // Display energy and health
+        std::string sHealth = "Health:" + std::to_string(mapObjects[nPlayerID].nHealth);
+        std::string sEnergy = "Energy:" + std::to_string(mapObjects[nPlayerID].nEnergy) + "/" +
+                              std::to_string(mapObjects[nPlayerID].nMaxEnergy);
+
+        DrawString({10, GetWindowSize().y - 80}, "pos:(" + std::to_string(mapObjects[nPlayerID].vPos.x) + "," +
+                                                 std::to_string(mapObjects[nPlayerID].vPos.y) + ")");
+        DrawString({10, GetWindowSize().y - 70}, "acceleration:" + std::to_string(mapObjects[nPlayerID].vAcc.mag()));
+        DrawString({10, GetWindowSize().y - 60}, "velocity:" + std::to_string(mapObjects[nPlayerID].vVel.mag()));
+
+        DrawString({10, GetWindowSize().y - 40}, sHealth, olc::RED, 2);
+        DrawString({10, GetWindowSize().y - 20}, sEnergy, olc::GREEN, 2);
+
+        std::string sKill = "Kill:" + std::to_string(mapObjects[nPlayerID].nKills);
+        std::string sDeath = "Death:" + std::to_string(mapObjects[nPlayerID].nDeaths);
+        DrawString({(GetWindowSize().x - 70), 10}, sKill, olc::GREEN, 1.25f);
+        DrawString({(GetWindowSize().x - 70), 25}, sDeath, olc::YELLOW, 1.25f);
 
         // Send player description
         bsl::net::message<GameMsg> msg;

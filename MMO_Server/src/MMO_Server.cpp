@@ -114,6 +114,18 @@ protected:
                 break;
             }
 
+            // When Player Fire a bullet
+            case GameMsg::Game_FireBullet: {
+                MessageAllClients(msg, client);
+                break;
+            }
+
+            // When Player hit someone
+            // msg is shooter, sufferer, damage
+            case GameMsg::Game_HitPlayer: {
+                MessageAllClients(msg, client);
+                break;
+            }
         }
     }
 };
