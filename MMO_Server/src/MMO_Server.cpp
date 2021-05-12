@@ -126,6 +126,11 @@ protected:
                 MessageAllClients(msg, client);
                 break;
             }
+
+            case GameMsg::Game_Dead: {
+                MessageAllClients(msg, client);
+                break;
+            }
         }
     }
 };

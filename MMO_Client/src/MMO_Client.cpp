@@ -41,13 +41,13 @@ private:
     sPlayerDescription descPlayer;
 
     // List contain all the bullets
-    std::list<sBullet> listBullets;
+    std::list<sBulletDescription> listBullets;
 
     bool bWaitingForConnection = true;
 
     bool bFollowObject = true;
 
-    // Get ping 1 per second
+    // Get ping per second
     float fPingTime = 0.0f;
     float fPing = 0.0f;
 
@@ -61,96 +61,11 @@ private:
     // Time for increase energy
     float fEnergyTime = 0.0f;
 
+    float fSpawnTime = 5.0f;
+
 private:
-    void setMap(std::string path) {
-        std::ifstream file(path);
-
-        std::string line;
-        while (std::getline(file, line)) {
-            sWorldMap.append(line);
-            vWorldSize.y++;
-        }
-        vWorldSize.x = line.length();
-        std::cout << "Map " << path << " loaded\nSize: (" << vWorldSize.x << "," << vWorldSize.y << ")\n";
-    }
-
-    void GetPing() {
-        bsl::net::message<GameMsg> msg;
-        msg.header.id = GameMsg::Server_GetPing;
-
-        std::chrono::system_clock::time_point timeNow = std::chrono::system_clock::now();
-
-        msg << timeNow;
-        Send(msg);
-    }
-
-    void GetStatus() {
-        bsl::net::message<GameMsg> msg;
-        msg.header.id = GameMsg::Server_GetStatus;
-        Send(msg);
-    }
-
-    inline void Shoot(olc::vf2d direction) {
-        if (fROFTime < 1.0f / mapObjects[nPlayerID].nRof) return;
-        fROFTime = 0;
-        olc::vf2d v;
-        if (mapObjects[nPlayerID].vVel.mag2() > 0) {
-            v = mapObjects[nPlayerID].vVel.norm();
-            if (direction.norm() == -v) v = direction;
-            else v += direction;
-        } else v = direction;
-
-        // Declare a bullet
-        sBullet bullet = {nPlayerID, 5, 2, 0, 0.2f,
-                          olc::Pixel(255, 0, 0),
-                          mapObjects[nPlayerID].vPos,
-                          v.norm() * 20.0f};
-        listBullets.push_back(bullet);
-        // Send bullet fire message
-        bsl::net::message<GameMsg> FireMsg;
-        FireMsg.header.id = GameMsg::Game_FireBullet;
-        FireMsg << bullet;
-        Send(FireMsg);
-    }
-
-    inline olc::vf2d reflect(olc::vf2d d, olc::vf2d n) {
-        olc::vf2d r;
-        r = d.norm() - 2 * (d.norm().dot(n.norm())) * n.norm();
-        r *= d.mag();
-        return r;
-    }
-
-    inline void HitPlayer(uint32_t shooterID, uint32_t suffererID, uint32_t damage) {
-        bsl::net::message<GameMsg> HitMsg;
-        HitMsg.header.id = GameMsg::Game_HitPlayer;
-        HitMsg << shooterID << suffererID << damage;
-        Send(HitMsg);
-    }
-
-public:
-    bool OnUserCreate() override {
-        tv = olc::TileTransformedView({ScreenWidth(), ScreenHeight()}, {32, 32});
-        setMap("resources/map/map_demo.txt");
-        // Connect to the server
-        if (Connect("127.0.0.1", 2696)) {
-            return true;
-        }
-        return false;
-    }
-
-    bool OnUserUpdate(float fElapsedTime) override {
-        // Ping Server every second
-        fPingTime += fElapsedTime;
-        if (fPingTime > 1.0f) {
-            GetPing();
-        }
-        fStatusTime += fElapsedTime;
-        if (fStatusTime > 5.0f) {
-            GetStatus();
-        }
-        fROFTime += fElapsedTime;
-        fEnergyTime += fElapsedTime;
-
+    // Handle Network
+    void HandleNetwork() {
         // Check for incoming network messages
         if (IsConnected()) {
             while (!Incoming().empty()) {
@@ -218,22 +133,36 @@ public:
                     }
 
                     case (GameMsg::Game_FireBullet): {
-                        sBullet bullet;
+                        sBulletDescription bullet;
                         msg >> bullet;
                         listBullets.push_back(bullet);
                         break;
                     }
 
                     case (GameMsg::Game_HitPlayer): {
-                        uint32_t damage;
-                        uint32_t sufferer;
-                        uint32_t shooter;
-                        msg >> damage >> sufferer >> shooter;
-//                        std::cout << "Hit: " << damage <<", " << sufferer << ", " << damage << std::endl;
-                        if (sufferer == nPlayerID) {
-                            if (damage>mapObjects[nPlayerID].nHealth)
+                        sHitDescription desc;
+                        msg >> desc;
+                        if (desc.nSuffererID == nPlayerID) {
+                            if (desc.nDamage >= mapObjects[nPlayerID].nHealth) {
                                 mapObjects[nPlayerID].nHealth = 0;
-                            else mapObjects[nPlayerID].nHealth -= damage;
+                                mapObjects[nPlayerID].status = PlayerStatus::Dead;
+                                mapObjects[nPlayerID].vPos = {-3.0f, -3.0f};
+                                mapObjects[nPlayerID].nDeaths++;
+                                sDeadDescription d = {desc.nShooterID, desc.nSuffererID};
+                                bsl::net::message<GameMsg> m;
+                                m.header.id = GameMsg::Game_Dead;
+                                m << d;
+                                Send(m);
+                            } else mapObjects[nPlayerID].nHealth -= desc.nDamage;
+                        }
+                        break;
+                    }
+
+                    case (GameMsg::Game_Dead): {
+                        sDeadDescription desc;
+                        msg >> desc;
+                        if (desc.nKillerID == nPlayerID) {
+                            mapObjects[nPlayerID].nKills++;
                         }
                         break;
                     }
@@ -241,12 +170,46 @@ public:
             }
         }
         // When connecting to server, display blank blue
-        if (bWaitingForConnection) {
-            Clear(olc::DARK_BLUE);
-            DrawString({10, 10}, "Waiting To connect...", olc::WHITE);
-            return true;
+    }
+
+    void DisplayHUD() {
+
+        // Display Server status
+        DrawString({10, 10}, "Server: " + (std::string) magic_enum::enum_name(serverStatus));
+
+        // Display Ping
+        DrawString({10, 20}, "Ping: " + std::to_string(fPing) + "ms");
+
+        if (bFollowObject) {
+            DrawString({10, 30}, "Following Object");
         }
 
+        if (mapObjects[nPlayerID].status == PlayerStatus::Dead) {
+            DrawString({10, 40}, "Spawn:" + std::to_string(fSpawnTime), olc::WHITE, 2);
+        }
+
+
+        // Display energy and health
+        std::string sHealth = "Health:" + std::to_string(mapObjects[nPlayerID].nHealth);
+        std::string sEnergy = "Energy:" + std::to_string(mapObjects[nPlayerID].nEnergy) + "/" +
+                              std::to_string(mapObjects[nPlayerID].nMaxEnergy);
+
+        DrawString({10, GetWindowSize().y - 80}, "pos:(" + std::to_string(mapObjects[nPlayerID].vPos.x) + "," +
+                                                 std::to_string(mapObjects[nPlayerID].vPos.y) + ")");
+        DrawString({10, GetWindowSize().y - 70}, "acceleration:" + std::to_string(mapObjects[nPlayerID].vAcc.mag()));
+        DrawString({10, GetWindowSize().y - 60}, "velocity:" + std::to_string(mapObjects[nPlayerID].vVel.mag()));
+
+        DrawString({10, GetWindowSize().y - 40}, sHealth, olc::RED, 2);
+        DrawString({10, GetWindowSize().y - 20}, sEnergy, olc::GREEN, 2);
+
+        std::string sKill = "Kill:" + std::to_string(mapObjects[nPlayerID].nKills);
+        std::string sDeath = "Death:" + std::to_string(mapObjects[nPlayerID].nDeaths);
+        DrawString({(GetWindowSize().x - 70), 10}, sKill, olc::GREEN, 1.25f);
+        DrawString({(GetWindowSize().x - 70), 25}, sDeath, olc::YELLOW, 1.25f);
+
+    }
+
+    void HandleInput(float fElapsedTime) {
         if (GetKey(olc::Key::Q).bHeld && mapObjects[nPlayerID].nEnergy > 0 && mapObjects[nPlayerID].vVel.mag2() > 0) {
             mapObjects[nPlayerID].fSpeed = 15.0f;
             if (fEnergyTime > 0.1f) {
@@ -296,6 +259,135 @@ public:
         // Press Space key to toggle Follow mode
         if (GetKey(olc::Key::SPACE).bReleased) bFollowObject = !bFollowObject;
 
+        // Handle Pan & Zoom
+        if (GetMouse(2).bPressed) tv.StartPan(GetMousePos());
+        if (GetMouse(2).bHeld) tv.UpdatePan(GetMousePos());
+        if (GetMouse(2).bReleased) tv.EndPan(GetMousePos());
+        if (GetMouseWheel() > 0) tv.ZoomAtScreenPos(1.5f, GetMousePos());
+        if (GetMouseWheel() < 0) tv.ZoomAtScreenPos(0.75f, GetMousePos());
+
+        // Check follow mode or not
+        if (bFollowObject) {
+            // Set offest to make object in middle of the screen
+            tv.SetWorldOffset(mapObjects[nPlayerID].vPos -
+                              tv.ScaleToWorld(olc::vf2d(ScreenWidth() / 2.0f, ScreenHeight() / 2.0f)));
+        }
+    }
+
+    void SetMap(std::string path) {
+        std::ifstream file(path);
+
+        std::string line;
+        while (std::getline(file, line)) {
+            sWorldMap.append(line);
+            vWorldSize.y++;
+        }
+        vWorldSize.x = line.length();
+        std::cout << "Map " << path << " loaded\nSize: (" << vWorldSize.x << "," << vWorldSize.y << ")\n";
+    }
+
+    void GetPing() {
+        bsl::net::message<GameMsg> msg;
+        msg.header.id = GameMsg::Server_GetPing;
+
+        std::chrono::system_clock::time_point timeNow = std::chrono::system_clock::now();
+
+        msg << timeNow;
+        Send(msg);
+    }
+
+    void GetStatus() {
+        bsl::net::message<GameMsg> msg;
+        msg.header.id = GameMsg::Server_GetStatus;
+        Send(msg);
+    }
+
+    inline void Shoot(olc::vf2d direction) {
+        if (fROFTime < 1.0f / mapObjects[nPlayerID].nRof || mapObjects[nPlayerID].status == PlayerStatus::Dead) return;
+        fROFTime = 0;
+        olc::vf2d v;
+//        if (mapObjects[nPlayerID].vVel.mag2() > 0) {
+//            v = mapObjects[nPlayerID].vVel.norm();
+//            if (direction.norm() == -v) v = direction;
+//            else v += direction;
+//        } else v = direction;
+        v = direction.norm() * 20.0f + mapObjects[nPlayerID].vVel;
+
+        // Declare a bullet
+        sBulletDescription bullet = {nPlayerID, 5, 2, 1, 0.2f,
+                                     olc::Pixel(255, 0, 0),
+                                     mapObjects[nPlayerID].vPos,
+                                     v};
+        listBullets.push_back(bullet);
+        // Send bullet fire message
+        bsl::net::message<GameMsg> FireMsg;
+        FireMsg.header.id = GameMsg::Game_FireBullet;
+        FireMsg << bullet;
+        Send(FireMsg);
+    }
+
+    inline olc::vf2d reflect(olc::vf2d d, olc::vf2d n) {
+        olc::vf2d r;
+        r = d.norm() - 2 * (d.norm().dot(n.norm())) * n.norm();
+        r *= d.mag();
+        return r;
+    }
+
+    inline void HitPlayer(uint32_t shooterID, uint32_t suffererID, uint32_t damage) {
+        bsl::net::message<GameMsg> HitMsg;
+        HitMsg.header.id = GameMsg::Game_HitPlayer;
+        sHitDescription desc = {shooterID, suffererID, damage};
+        HitMsg << desc;
+        Send(HitMsg);
+    }
+
+public:
+    bool OnUserCreate() override {
+        tv = olc::TileTransformedView({ScreenWidth(), ScreenHeight()}, {32, 32});
+        SetMap("resources/map/map_demo.txt");
+        // Connect to the server
+        if (Connect("127.0.0.1", 2696)) {
+            return true;
+        }
+        return false;
+    }
+
+    bool OnUserUpdate(float fElapsedTime) override {
+        // Ping Server every second
+        fPingTime += fElapsedTime;
+        if (fPingTime > 1.0f) {
+            GetPing();
+        }
+        fStatusTime += fElapsedTime;
+        if (fStatusTime > 5.0f) {
+            GetStatus();
+        }
+        fROFTime += fElapsedTime;
+        fEnergyTime += fElapsedTime;
+
+        // Handle network message
+        HandleNetwork();
+
+        if (bWaitingForConnection) {
+            Clear(olc::DARK_BLUE);
+            DrawString({10, 10}, "Waiting To connect...", olc::WHITE);
+            return true;
+        }
+
+        if (mapObjects[nPlayerID].status == PlayerStatus::Dead) {
+            if (fSpawnTime <= 0) {
+                mapObjects[nPlayerID].status = PlayerStatus::Alive;
+                mapObjects[nPlayerID].vPos = {3.0f, 3.0f};
+                mapObjects[nPlayerID].nHealth = 100;
+                mapObjects[nPlayerID].nEnergy = 100;
+                fSpawnTime = 5.0f;
+            } else {
+                fSpawnTime -= fElapsedTime;
+            }
+        }
+
+        // Handle User input
+        HandleInput(fElapsedTime);
 
         // update objects locally
         for (auto &object : mapObjects) {
@@ -309,7 +401,7 @@ public:
             // TopLeft
             olc::vi2d vAreaTL = (vCurrentCell.min(vTargetCell) - olc::vi2d(1, 1)).max({0, 0});
             // BottomRight
-            olc::vi2d vAreaBR = (vCurrentCell.min(vTargetCell) + olc::vi2d(1, 1)).min(vWorldSize);
+            olc::vi2d vAreaBR = (vCurrentCell.max(vTargetCell) + olc::vi2d(1, 1)).min(vWorldSize);
 
             //TODO: Draw collision area, delete later
             tv.FillRectDecal(vAreaTL, vAreaBR - vAreaTL + olc::vi2d(1, 1), olc::Pixel(0, 255, 255, 32));
@@ -373,14 +465,15 @@ public:
             // Get the region of world cells that may have collision
             olc::vi2d vCurrentCell = bullet.vPos.floor();
             olc::vi2d vTargetCell = vPotentialPosition;
-            olc::vi2d vAreaTL = (vCurrentCell.min(vTargetCell) - olc::vi2d(1, 1).max({0, 0}));
-            olc::vi2d vAreaBR = (vCurrentCell.min(vTargetCell) + olc::vi2d(1, 1).min(vWorldSize));
+            olc::vi2d vAreaTL = (vCurrentCell.min(vTargetCell) - olc::vi2d(1, 1)).max({0, 0});
+            olc::vi2d vAreaBR = (vCurrentCell.max(vTargetCell) + olc::vi2d(1, 1)).min(vWorldSize);
             //TODO: Draw collision area, delete later
             tv.FillRectDecal(vAreaTL, vAreaBR - vAreaTL + olc::vi2d(1, 1), olc::Pixel(0, 255, 255, 32));
             olc::vf2d vRayToNearest;
 
             // Iterate through each cell in collision test area
             olc::vi2d vCell;
+            bool bCollisionHappen = false;
             for (vCell.y = vAreaTL.y; vCell.y <= vAreaBR.y; vCell.y++) {
                 for (vCell.x = vAreaTL.x; vCell.x <= vAreaBR.x; vCell.x++) {
                     // Check the cell is solid or not
@@ -394,13 +487,17 @@ public:
                         if (std::isnan(fOverlap)) fOverlap = 0;
 
                         if (fOverlap > 0) {
-//                            vPotentialPosition = vPotentialPosition - vRayToNearest.norm() * fOverlap;
+                            bCollisionHappen = true;
+                            vPotentialPosition = vPotentialPosition - vRayToNearest.norm() * fOverlap;
                             // If happen collision, nBounce minus 1, and reverse the velocity
+                            if (bullet.nBounce > 0)
+                                bullet.vVel = reflect(bullet.vVel, -vRayToNearest);
                             bullet.nBounce--;
-                            bullet.vVel = reflect(bullet.vVel, -vRayToNearest);
+                            break;
                         }
                     }
                 }
+                if (bCollisionHappen) break;
             }
 
             for (auto &targetObject : mapObjects) {
@@ -419,33 +516,11 @@ public:
             bullet.vPos = vPotentialPosition;
         }
         // Remove all the bullet which can't bounce
-        listBullets.remove_if([](sBullet b) { return b.nBounce < 0; });
+        listBullets.remove_if([](sBulletDescription b) { return b.nBounce < 0; });
 
 
         // Clear World
         Clear(olc::BLACK);
-
-        // Handle Pan & Zoom
-        if (GetMouse(2).bPressed) tv.StartPan(GetMousePos());
-        if (GetMouse(2).bHeld) tv.UpdatePan(GetMousePos());
-        if (GetMouse(2).bReleased) tv.EndPan(GetMousePos());
-        if (GetMouseWheel() > 0) tv.ZoomAtScreenPos(1.5f, GetMousePos());
-        if (GetMouseWheel() < 0) tv.ZoomAtScreenPos(0.75f, GetMousePos());
-
-        // Display Server status
-        DrawString({10, 10}, "Server: " + (std::string) magic_enum::enum_name(serverStatus));
-
-        // Display Ping
-        DrawString({10, 20}, "Ping: " + std::to_string(fPing) + "ms");
-
-        // Check follow mode or not
-        if (bFollowObject) {
-            // Set offest to make object in middle of the screen
-            tv.SetWorldOffset(mapObjects[nPlayerID].vPos -
-                              tv.ScaleToWorld(olc::vf2d(ScreenWidth() / 2.0f, ScreenHeight() / 2.0f)));
-            DrawString({10, 30}, "Following Object");
-        }
-
 
         // Draw World
         olc::vi2d vTL = tv.GetTopLeftTile().max({0, 0});
@@ -488,23 +563,8 @@ public:
             tv.FillCircle(bullet.vPos, bullet.fRadius, bullet.pColor);
         }
 
-        // Display energy and health
-        std::string sHealth = "Health:" + std::to_string(mapObjects[nPlayerID].nHealth);
-        std::string sEnergy = "Energy:" + std::to_string(mapObjects[nPlayerID].nEnergy) + "/" +
-                              std::to_string(mapObjects[nPlayerID].nMaxEnergy);
-
-        DrawString({10, GetWindowSize().y - 80}, "pos:(" + std::to_string(mapObjects[nPlayerID].vPos.x) + "," +
-                                                 std::to_string(mapObjects[nPlayerID].vPos.y) + ")");
-        DrawString({10, GetWindowSize().y - 70}, "acceleration:" + std::to_string(mapObjects[nPlayerID].vAcc.mag()));
-        DrawString({10, GetWindowSize().y - 60}, "velocity:" + std::to_string(mapObjects[nPlayerID].vVel.mag()));
-
-        DrawString({10, GetWindowSize().y - 40}, sHealth, olc::RED, 2);
-        DrawString({10, GetWindowSize().y - 20}, sEnergy, olc::GREEN, 2);
-
-        std::string sKill = "Kill:" + std::to_string(mapObjects[nPlayerID].nKills);
-        std::string sDeath = "Death:" + std::to_string(mapObjects[nPlayerID].nDeaths);
-        DrawString({(GetWindowSize().x - 70), 10}, sKill, olc::GREEN, 1.25f);
-        DrawString({(GetWindowSize().x - 70), 25}, sDeath, olc::YELLOW, 1.25f);
+        // Display HUD
+        DisplayHUD();
 
         // Send player description
         bsl::net::message<GameMsg> msg;
@@ -512,6 +572,10 @@ public:
         msg << mapObjects[nPlayerID];
         Send(msg);
         return true;
+    }
+
+    bool OnUserDestroy() override {
+
     }
 };
 
