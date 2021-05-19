@@ -10,7 +10,7 @@ namespace bsl {
             client_interface() {}
 
             virtual ~client_interface() {
-                // If the client is destroyed, always try and disconnect from server
+                // If the client is destroyed, disconnect from server
                 Disconnect();
             }
 

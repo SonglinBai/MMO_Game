@@ -13,7 +13,7 @@ namespace bsl {
         template<typename T>
         class connection : public std::enable_shared_from_this<connection<T>> {
         public:
-            // A connection is owned by server
+            // A connection is owned by server or client
             enum class owner {
                 server,
                 client
@@ -34,7 +34,7 @@ namespace bsl {
                     // Pre caculate the result for the puzzle
                     m_nHandshakeCheck = scramble(m_nHandshakeOut);
                 } else {
-                    // Connection is Client -> Server, we don't need to define nothing
+                    // Connection is Client -> Server, we don't need to define anything
                     m_nHandshakeOut = 0;
                     m_nHandshakeIn = 0;
                 }

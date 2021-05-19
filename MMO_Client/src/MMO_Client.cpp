@@ -210,7 +210,7 @@ private:
     }
 
     void HandleInput(float fElapsedTime) {
-        if (GetKey(olc::Key::Q).bHeld && mapObjects[nPlayerID].nEnergy > 0 && mapObjects[nPlayerID].vVel.mag2() > 0) {
+        if (GetKey(olc::Key::SHIFT).bHeld && mapObjects[nPlayerID].nEnergy > 0 && mapObjects[nPlayerID].vVel.mag2() > 0) {
             mapObjects[nPlayerID].fSpeed = 15.0f;
             if (fEnergyTime > 0.1f) {
                 mapObjects[nPlayerID].nEnergy--;
@@ -403,8 +403,7 @@ public:
             // BottomRight
             olc::vi2d vAreaBR = (vCurrentCell.max(vTargetCell) + olc::vi2d(1, 1)).min(vWorldSize);
 
-            //TODO: Draw collision area, delete later
-            tv.FillRectDecal(vAreaTL, vAreaBR - vAreaTL + olc::vi2d(1, 1), olc::Pixel(0, 255, 255, 32));
+//            tv.FillRectDecal(vAreaTL, vAreaBR - vAreaTL + olc::vi2d(1, 1), olc::Pixel(0, 255, 255, 32));
 
             olc::vf2d vRayToNearest;
 
@@ -437,17 +436,15 @@ public:
                 float fDistance = (object.second.vPos - targetObject.second.vPos).mag();
                 // Collision happened
                 if (fDistance <= object.second.fRadius + targetObject.second.fRadius) {
+                    olc::vf2d dir = (object.second.vPos - targetObject.second.vPos).norm();
+                    // When two object at same position
+                    if (fDistance == 0) {
+                        dir = {0.0,1.0};
+                    }
                     // Move position
-                    float fOverlap = 0.5f * (fDistance - object.second.fRadius - object.second.fRadius);
-                    object.second.vPos -= fOverlap / fDistance * (object.second.vPos - targetObject.second.vPos);
-                    targetObject.second.vPos += fOverlap / fDistance * (object.second.vPos - targetObject.second.vPos);
-                    // Caculate velocity
-//                    olc::vf2d n = (targetObject.second.vPos - object.second.vPos).norm();
-//                    olc::vf2d k = object.second.vVel - targetObject.second.vVel;
-//                    float p = 20.0f * (n.x * k.x + n.y * k.y) / (object.second.nMass + targetObject.second.nMass);
-//                    object.second.vAcc = object.second.vAcc- p * targetObject.second.nMass * olc::vf2d(n.x, n.y);
-//                    targetObject.second.vAcc =
-//                            targetObject.second.vAcc+ p * object.second.nMass * olc::vf2d(n.x, n.y);
+                    float fOverlap = 0.5f * (fDistance - object.second.fRadius - targetObject.second.fRadius);
+                    object.second.vPos -= fOverlap * dir;
+                    targetObject.second.vPos += fOverlap * dir;
                 }
 
             }
@@ -457,7 +454,6 @@ public:
         }
 
         // Update bullets locally
-        // TODO: Bullets collision test has some problem, need to fix
         for (auto &bullet : listBullets) {
             // Caculate the new position of the bullet
             olc::vf2d vPotentialPosition = bullet.vPos + bullet.vVel * fElapsedTime;
@@ -467,8 +463,7 @@ public:
             olc::vi2d vTargetCell = vPotentialPosition;
             olc::vi2d vAreaTL = (vCurrentCell.min(vTargetCell) - olc::vi2d(1, 1)).max({0, 0});
             olc::vi2d vAreaBR = (vCurrentCell.max(vTargetCell) + olc::vi2d(1, 1)).min(vWorldSize);
-            //TODO: Draw collision area, delete later
-            tv.FillRectDecal(vAreaTL, vAreaBR - vAreaTL + olc::vi2d(1, 1), olc::Pixel(0, 255, 255, 32));
+//            tv.FillRectDecal(vAreaTL, vAreaBR - vAreaTL + olc::vi2d(1, 1), olc::Pixel(0, 255, 255, 32));
             olc::vf2d vRayToNearest;
 
             // Iterate through each cell in collision test area
@@ -573,10 +568,6 @@ public:
         Send(msg);
         return true;
     }
-
-    bool OnUserDestroy() override {
-
-    }
 };
 
 int main() {
@@ -585,13 +576,3 @@ int main() {
         demo.Start();
     return 0;
 }
-
-
-
-
-
-
-
-
-
-

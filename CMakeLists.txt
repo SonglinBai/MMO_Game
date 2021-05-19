@@ -24,5 +24,4 @@ endif ()
 
 add_subdirectory(MMO_Client)
 add_subdirectory(MMO_Server)
-add_subdirectory(test)
 

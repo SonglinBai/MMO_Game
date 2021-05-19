@@ -63,8 +63,6 @@ namespace bsl {
                                                                         m_asioContext, std::move(socket),
                                                                         m_qMessagesIn);
 
-
-
                                 // OnClientConnect function will return bool
                                 if (OnClientConnect(newconn)) {
                                     // Connection allowed, so add to connection container
